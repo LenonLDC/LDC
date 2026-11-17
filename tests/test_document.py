@@ -81,6 +81,44 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(result.max_voltage_kv, 145)
         self.assertIn("145 kV", result.voltage_evidence)
 
+    def test_extracts_title_from_page_labeled_ocr_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdf_path = Path(directory) / "uploaded.pdf"
+            document = pymupdf.open()
+            document.new_page().insert_text((72, 72), "A scanned page")
+            document.save(pdf_path)
+            document.close()
+
+            result = extract_material_description(
+                pdf_path,
+                extracted_text=(
+                    "[Página 1]\nTABELA DE DADOS TÉCNICOS GARANTIDOS\n"
+                    "TRANSFORMADOR DE CORRENTE\nIdentificação da Proposta"
+                ),
+            )
+
+        self.assertEqual(result.value, "TRANSFORMADOR DE CORRENTE")
+        self.assertEqual(result.method, "technical_sheet_heading")
+
+    def test_uses_uploaded_filename_hint_instead_of_temporary_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pdf_path = Path(directory) / "random-temporary-name.pdf"
+            document = pymupdf.open()
+            document.new_page().insert_text((72, 72), "A technical document")
+            document.save(pdf_path)
+            document.close()
+
+            result = extract_material_description(
+                pdf_path,
+                filename_hint=(
+                    "c5f2641a-5714-4fe9-a04f-909a4d7f3a59-"
+                    "TRANSFORMADOR DE CORRENTE - Dados técnicos.pdf"
+                ),
+            )
+
+        self.assertEqual(result.value, "TRANSFORMADOR DE CORRENTE")
+        self.assertEqual(result.method, "filename")
+
 
 if __name__ == "__main__":
     unittest.main()

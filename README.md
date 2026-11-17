@@ -1,6 +1,6 @@
-# Assistente de consulta de PD
+# Assistente LDC para cadastro de materiais
 
-Protótipo local para ler uma ficha técnica em PDF, consultar a planilha `consultapds.xls` e apresentar os PDs mais compatíveis para revisão humana.
+Aplicação local para revisar uma solicitação SBS, analisar uma ficha técnica em PDF, consultar a referência `consultapds.xls` e preparar um rascunho de cadastro para revisão humana.
 
 ## Regras aplicadas
 
@@ -9,10 +9,10 @@ Protótipo local para ler uma ficha técnica em PDF, consultar a planilha `consu
 - O cabeçalho é validado antes da leitura para evitar consultar colunas erradas.
 - O leitor aceita `.xls` binário e a exportação HTML do portal que também usa a extensão `.xls`.
 - O número da linha da planilha é incluído como referência.
-- A pontuação é apenas uma ordem de similaridade lexical, não é probabilidade nem aprovação.
-- O protótipo não acessa SBS/Astrein, não guarda credenciais e não envia cadastros. O PD e os campos devem ser confirmados antes de qualquer envio.
+- A similaridade lexical e os limites de tensão ajudam a ordenar os candidatos; não são probabilidade nem aprovação.
+- A interface não acessa SBS/Astrein, não guarda credenciais e não envia cadastros. Campos extraídos e o PD precisam ser confirmados por uma pessoa.
 
-O nome do material é extraído do cabeçalho “Tabela de Dados Técnicos Garantidos” quando o título está disponível no texto do PDF. Se não estiver, o protótipo tenta o início do nome do arquivo (ignorando o identificador do anexo). Para outros formatos, informe `--material-description` após conferir a ficha. Valores de tensão máxima explicitamente rotulados no PDF também são usados para favorecer ou penalizar tipos de PD que tragam limites de tensão no título.
+O leitor local percorre as páginas do PDF e tenta extrair o título e a tensão máxima. Tipos de documento distintos podem exigir conferência ou a descrição manual. PDF digitalizado precisa de OCR.
 
 ## Instalação no Windows
 
@@ -22,21 +22,44 @@ No PowerShell, na pasta do projeto:
 python -m pip install -e .
 ```
 
-## Executar com os anexos atuais
+## Abrir a interface
 
 ```powershell
-python -m pdm_assistant `
-  --catalog "C:\Users\grassl\.copilot\workspaces\bcb869d0-469e-4427-8ea5-0874c3388779\attachments\e6f8efe1-1eb7-4c23-92a8-2834362b3ccc-consultapds.xls" `
-  --pdf "C:\Users\grassl\.copilot\workspaces\bcb869d0-469e-4427-8ea5-0874c3388779\attachments\c5f2641a-5714-4fe9-a04f-909a4d7f3a59-TRANSFORMADOR DE CORRENTE  - Dados técnicos garantidos Balteau - Português.pdf"
+python -m streamlit run streamlit_app.py
 ```
 
-Se a extração automática não encontrar o tipo, forneça-o explicitamente:
+Na tela, carregue a planilha de referência e o PDF, preencha os dados do SBS e execute a análise. Revise candidatos, campos e evidências; então prepare e baixe um JSON de rascunho. Esse arquivo é uma saída para conferência e não é uma planilha de importação oficial da Astrein.
+
+## APIs recomendadas
+
+- **Azure AI Document Intelligence, modelo `prebuilt-layout`**: OCR e estrutura (texto, tabelas e linhas com página) para PDFs variados e digitalizados.
+- **Azure OpenAI com Structured Outputs**: transformar o texto extraído em campos JSON controlados, exigindo trecho de evidência por campo e usando `null` quando o documento não fornece um valor. O modelo não escolhe nem inventa o PD; a planilha continua sendo a referência.
+- **Consulta PD local**: comparar a descrição confirmada com colunas B/C da planilha e usar limites de tensão encontrados no título como filtro auxiliar.
+
+As APIs Azure são opcionais e ficam desligadas por padrão. Para habilitá-las no protótipo, configure as variáveis de ambiente no processo que inicia o Streamlit:
+
+```powershell
+$env:AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT = "https://<recurso>.cognitiveservices.azure.com"
+$env:AZURE_DOCUMENT_INTELLIGENCE_KEY = "<segredo>"
+$env:AZURE_OPENAI_ENDPOINT = "https://<recurso>.openai.azure.com"
+$env:AZURE_OPENAI_API_KEY = "<segredo>"
+$env:AZURE_OPENAI_DEPLOYMENT = "<deployment-com-structured-outputs>"
+python -m streamlit run streamlit_app.py
+```
+
+O envio do PDF ao Document Intelligence e do texto ao Azure OpenAI exige marcar as opções correspondentes na interface. Antes de usar documentos reais, a LDC deve aprovar região, privacidade, retenção, rede e custos. Para produção, prefira Microsoft Entra ID com identidade gerenciada e cofre corporativo a chaves de API. A autenticação do protótipo via variáveis de ambiente destina-se apenas à validação.
+
+Documentação: [Document Intelligence layout](https://learn.microsoft.com/azure/ai-services/document-intelligence/prebuilt/layout) e [Structured Outputs no Azure OpenAI](https://learn.microsoft.com/azure/ai-services/openai/how-to/structured-outputs).
+
+## CLI
+
+A versão de linha de comando segue disponível:
 
 ```powershell
 python -m pdm_assistant --catalog "C:\caminho\consultapds.xls" --pdf "C:\caminho\ficha.pdf" --material-description "TRANSFORMADOR DE CORRENTE"
 ```
 
-Para integração com outras etapas, use `--json`. A saída inclui a descrição pesquisada, evidência do PDF, candidatos, códigos PD e linhas de origem.
+Use `--json` para saída estruturada.
 
 ## Testes
 
@@ -44,6 +67,6 @@ Para integração com outras etapas, use `--json`. A saída inclui a descrição
 python -m unittest discover -s tests -v
 ```
 
-## Próxima etapa para automação assistida
+## Próxima etapa para integração
 
-Depois de validar a qualidade das sugestões em fichas reais, conectar o processo ao SBS/Astrein por API oficial, se disponível; caso contrário, usar RPA autorizado com seletores estáveis. A primeira versão dessa integração deve preparar o formulário e aguardar confirmação humana. Acesso à rede corporativa, autenticação autorizada, regras de aprovação e mapeamento dos campos de tela ainda precisam ser configurados no ambiente LDC.
+Depois de validar os resultados com documentos representativos, integrar ao SBS/Astrein por API oficial, se disponível; caso contrário, avaliar RPA aprovado pela equipe de TI usando seletores estáveis. Autenticação, acesso à rede, aprovação, mapeamento dos campos e validações de duplicidade precisam ser definidos no ambiente LDC. A confirmação humana antes do envio deve permanecer até que haja evidência suficiente de confiabilidade.
